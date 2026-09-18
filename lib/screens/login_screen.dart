@@ -2,105 +2,126 @@ import 'package:flutter/material.dart';
 import 'package:rive/rive.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const new({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool _obscurePassword = true;
-  
-  // Controlador para detectar lo que el usuario escribe en la contraseña
-  final TextEditingController _passwordController = TextEditingController();
-  bool _hasText = false;
+  //Control para mostrar u ocultar la contraseña
+  bool _obscure = true;
 
-  @override
-  void initState() {
-    super.initState();
-    // Escuchamos los cambios en el TextField de la contraseña
-    _passwordController.addListener(() {
-      setState(() {
-        _hasText = _passwordController.text.isNotEmpty;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    super.dispose();
-  }
+  //1.1 Crear el cerebro de la animacion
+  StateMachineController? _controller;
+  //SMT: State Machine Input / Entrada de maquina de estado
+  SMIInput? _isChecking;
+  SMIInput? _isHandsUp;
+  SMIInput? _trigSuccess;
+  SMIInput? _trigFail;
 
   @override
   Widget build(BuildContext context) {
+    //Para obtener el tamaño de la pantalla
     final Size size = MediaQuery.of(context).size;
-    
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: EdgeInsets.symmetric(horizontal: 20),
           child: Column(
             children: [
               SizedBox(
                 width: size.width,
                 height: 200,
-                child: const RiveAnimation.asset('login_osito.riv'),
+                child: RiveAnimation.asset(
+                  'login-bear.riv',
+                  stateMachines: ['Login Machine'],
+                //1.2 Vincular Animacion
+                onInit: (artboard) {
+                  _controller = StateMachineController.fromArtboard(
+                    artboard, 'Login Machine'
+                    );
+
+                    //1.3 Verificar que el controlador no sea nulo
+                    if (_controller == null) return;
+                    //Agrega el controlador al escenario/tablero
+                    artboard.addController(_controller!);
+                    //Vinculamos variables
+                    _isChecking = _controller?.findSMI('isChecking');
+                    _isHandsUp = _controller?.findSMI('isHandsUp');
+                    _trigSuccess = _controller?.findSMI('trigSuccess');
+                    _trigFail = _controller?.findSMI('trigFail');
+                  },
+                )
               ),
-              const SizedBox(height: 20),
-              
-              // TextField de Correo Electrónico
+              //Sizedbox para separar espacios
+              SizedBox(height: 10),
+              //Campo de texto para el correo
               TextField(
+                onChanged: (value){
+                  if (_isHandsUp != null) {
+                    //No tapes los ojos al ver email
+                    _isHandsUp!.change(false);
+                  }
+                  //Si isChecking no es nulo, cambiar el valor de la variable
+                  if (_isChecking != null) {
+                    //Activar modo chismoso
+                    _isChecking!.change(true);
+                  }
+                },
+                //para mostrar el tipo de teclado
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   hintText: 'Email',
                   prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border:OutlineInputBorder(
+                    //Redondeo de bordes
+                    borderRadius: BorderRadius.circular(12),
+                  )
                 ),
               ),
-              
-              const SizedBox(height: 20),
-              
-              // TextField de Contraseña con Ternarios
+              SizedBox(height: 10),
+              //Campo de texto para la contraseña
               TextField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
+                  onChanged: (value){
+                  if (_isChecking != null) {
+                    //No tapes los ojos al ver email
+                    _isChecking !.change(false);
+                  }
+                  //Si isChecking no es nulo, cambiar el valor de la variable
+                  if (_isHandsUp != null) {
+                    //Activar modo chismoso
+                    _isHandsUp!.change(true);
+                  }
+                },
+                obscureText: _obscure,
+                //para mostrar el tipo de teclado
                 decoration: InputDecoration(
                   hintText: 'Contraseña',
-                  // Ternario para cambiar el color del icono de la cerradura si hay texto
-                  prefixIcon: Icon(
-                    Icons.lock,
-                    color: _hasText ? Colors.blue : Colors.grey,
-                  ),
+                  prefixIcon: const Icon(Icons.lock),
+                  //Operador ternario
                   suffixIcon: IconButton(
+                    //If ternario
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                      _obscure ? Icons.visibility : Icons.visibility_off,
                     ),
                     onPressed: () {
+                      //Refrescar el estado del widget
                       setState(() {
-                        _obscurePassword = !_obscurePassword;
+                        _obscure = !_obscure;
                       });
                     },
                   ),
-                  // Ternario para cambiar el color del borde del input cuando escriben
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: _hasText ? Colors.blue : Colors.grey, // Ternario aplicado aquí
-                      width: 1.5,
-                    ),
-                  ),
+                  border:OutlineInputBorder(
+                    //Redondeo de bordes
+                    borderRadius: BorderRadius.circular(12),
+                  )
                 ),
               ),
-            ],
+            ]
+          ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
