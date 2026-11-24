@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rive/rive.dart';
-import 'dart:async'; //3.1 Importar libreria para temporizador
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,176 +12,375 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  //Control para mostrar u ocultar la contraseña
-  bool _obscure = true;
+  // Controladores de texto
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  //1.1 Crear el cerebro de la animacion
+  // Control para mostrar u ocultar la contraseña
+  bool _obscure = true;
+  bool _isLoading = false;
+
+  // Cerebro de la animación Rive
   StateMachineController? _controller;
-  //SMT: State Machine Input / Entrada de maquina de estado
   SMIBool? _isChecking;
   SMIBool? _isHandsUp;
   SMITrigger? _trigSuccess;
   SMITrigger? _trigFail;
-  //3.2 VARIABLE PARA EL TEMPORIZADOR DE MIRADA
   SMINumber? _numLook;
 
-  //3.3 Timer para detener la mirada al escribir 
+  // Timer para mirada de Rive
   Timer? _typingdebounce;
 
-  //2.1 Crear las variables para FocusNode
-  final _emailFocus = FocusNode(); //Se llama node por un foco de cosas que puede hacer
+  // FocusNodes
+  final _emailFocus = FocusNode();
   final _passWordFocus = FocusNode();
 
-  //2.2 Listeners (Oyentes/chismosos) para saber cuando el usuario esta escribiendo en el campo de texto
   @override
   void initState() {
     super.initState();
-    
-    _emailFocus.addListener((){
+
+    _emailFocus.addListener(() {
       if (_emailFocus.hasFocus) {
-        //Verificar que no sea nulo
         if (_isHandsUp != null) {
-          //Manos abajo en el email
           _isHandsUp!.change(false);
-          //3.4 Mirada neutra
           _numLook?.value = 50.0;
         }
+      } else {
+        _isChecking?.change(false);
       }
     });
-    
-    _passWordFocus.addListener((){
-      //Manos arriba en el password
-      _isHandsUp!.change(_passWordFocus.hasFocus);
-      //3.5 Detener la mirada al escribir
+
+    _passWordFocus.addListener(() {
+      _isHandsUp?.change(_passWordFocus.hasFocus);
       _typingdebounce?.cancel();
-      _typingdebounce = Timer(const Duration(milliseconds: 500), (){
+      _typingdebounce = Timer(const Duration(milliseconds: 500), () {
         _numLook?.value = 50.0;
       });
     });
   }
 
+  // Lógica de inicio de sesión con Firebase Auth y reacción de Rive
+  Future<void> _signIn() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    // Quitar focos para bajar las manos si estaban arriba
+    _emailFocus.unfocus();
+    _passWordFocus.unfocus();
+    _isHandsUp?.change(false);
+    _isChecking?.change(false);
+
+    if (email.isEmpty || password.isEmpty) {
+      _trigFail?.fire();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor completa ambos campos'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Éxito: Trigger de éxito del osito
+      _trigSuccess?.fire();
+
+      // Dejamos un momento para apreciar la animación alegre del osito
+      await Future.delayed(const Duration(milliseconds: 900));
+
+      // El AuthGate en main.dart detectará el cambio y pasará a HomeScreen automáticamente
+    } on FirebaseAuthException catch (e) {
+      // Error: Trigger de fallo del osito (sacudida de cabeza)
+      _trigFail?.fire();
+
+      String errorMsg = 'Error al iniciar sesión';
+      if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
+        errorMsg = 'Correo o contraseña incorrectos.';
+      } else if (e.code == 'wrong-password') {
+        errorMsg = 'Contraseña incorrecta.';
+      } else if (e.code == 'invalid-email') {
+        errorMsg = 'Formato de correo inválido.';
+      } else if (e.message != null) {
+        errorMsg = e.message!;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      _trigFail?.fire();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error inesperado: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Diálogo para recuperación de contraseña (Fase 4)
+  void _showForgotPasswordDialog() {
+    final resetEmailController = TextEditingController(text: _emailController.text.trim());
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool isSending = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Recuperar Contraseña'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Ingresa tu correo para recibir las instrucciones de restablecimiento:'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: resetEmailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: 'Correo electrónico',
+                      prefixIcon: const Icon(Icons.email),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSending ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: isSending
+                      ? null
+                      : () async {
+                          final email = resetEmailController.text.trim();
+                          if (email.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Ingresa un correo válido')),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isSending = true);
+                          try {
+                            await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Correo de recuperación enviado. Revisa tu bandeja de entrada.'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } on FirebaseAuthException catch (e) {
+                            if (dialogContext.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(e.message ?? 'Error al enviar correo'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (dialogContext.mounted) setDialogState(() => isSending = false);
+                          }
+                        },
+                  child: isSending
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Enviar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    //Para obtener el tamaño de la pantalla
     final Size size = MediaQuery.of(context).size;
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Column(
             children: [
+              // Indicador visual discreto de conexión exitosa con Firebase (Fase 1)
+              Align(
+                alignment: Alignment.topRight,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade400, width: 0.8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green.shade600, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Firebase Conectado',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Animación de Rive del oso
               SizedBox(
                 width: size.width,
-                height: 200,
+                height: 220,
                 child: RiveAnimation.asset(
                   'assets/login-bear.riv',
                   stateMachines: const ['Login Machine'],
-                  //1.2 Vincular Animacion
                   onInit: (artboard) {
-                    _controller = StateMachineController.fromArtboard(
-                      artboard, 'Login Machine'
-                    );
-
-                    //1.3 Verificar que el controlador no sea nulo
+                    _controller = StateMachineController.fromArtboard(artboard, 'Login Machine');
                     if (_controller == null) return;
-                    //Agrega el controlador al escenario/tablero
                     artboard.addController(_controller!);
-                    //Vinculamos variables
+
                     _isChecking = _controller?.findSMI('isChecking');
                     _isHandsUp = _controller?.findSMI('isHandsUp');
                     _trigSuccess = _controller?.findSMI('trigSuccess');
                     _trigFail = _controller?.findSMI('trigFail');
-                    //3.6 Vincular la variable de mirada
                     _numLook = _controller?.findSMI('numLook');
-                  }
-                )
-              ),
-              //Sizedbox para separar espacios
-              const SizedBox(height: 10),
-              //Campo de texto para el correo
-              TextField(
-                focusNode: _emailFocus,
-                onChanged: (value){
-                  if (_isHandsUp != null) {
-                    //No tapes los ojos al ver email
-                    //_isHandsUp!.change(false);
-                  }
-                  //Si isChecking no es nulo, cambiar el valor de la variable
-                  if (_isChecking != null) {
-                    //Activar modo chismoso
-                    _isChecking!.change(true);
-                    //implementar el numLook
-                    //80 es la medida de calibración
-                    final look = (value.length / 80 * 100).clamp(0, 100);
-                    //clamp es el rango abrazadera
-                    _numLook?.value = look.toDouble();
-                    
-                    //3.7 Detener la mirada al escribir
-                    _typingdebounce?.cancel();
-                    _typingdebounce = Timer(const Duration(seconds: 3),
-                      () {
-                        //si se cierra la pantalla se cierra el contador
-                        if (!mounted) return;
-                        
-                        //3.8 Mirada neutra y dejar de chequear
-                        _numLook?.value = 50.0; // Resetea la posición horizontal de los ojos al centro
-                        _isChecking?.change(false); // Detiene el modo de seguimiento
-                      }
-                    );
-                  }
-                },
-                //para mostrar el tipo de teclado
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  hintText: 'Email',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    //Redondeo de bordes
-                    borderRadius: BorderRadius.circular(12),
-                  )
+                  },
                 ),
               ),
-              const SizedBox(height: 10),
-              //Campo de texto para la contraseña
+              const SizedBox(height: 16),
+
+              // Campo Email
               TextField(
-                //2.3 Asigna el foco al campo de texto
-                focusNode: _passWordFocus,
-                onChanged: (value){
+                controller: _emailController,
+                focusNode: _emailFocus,
+                keyboardType: TextInputType.emailAddress,
+                onChanged: (value) {
+                  if (_isHandsUp != null) _isHandsUp!.change(false);
                   if (_isChecking != null) {
-                    //No tapes los ojos al ver email
-                    _isChecking!.change(false);
-                  }
-                  //Si isChecking no es nulo, cambiar el valor de la variable
-                  if (_isHandsUp != null) {
-                    //Activar modo chismoso
-                    _isHandsUp!.change(true);
+                    _isChecking!.change(true);
+                    final look = (value.length / 80 * 100).clamp(0, 100);
+                    _numLook?.value = look.toDouble();
+
+                    _typingdebounce?.cancel();
+                    _typingdebounce = Timer(const Duration(seconds: 3), () {
+                      if (!mounted) return;
+                      _numLook?.value = 50.0;
+                      _isChecking?.change(false);
+                    });
                   }
                 },
-                obscureText: _obscure,
-                //para mostrar el tipo de teclado
                 decoration: InputDecoration(
-                  hintText: 'Contraseña',
-                  prefixIcon: const Icon(Icons.lock),
-                  //Operador ternario
+                  labelText: 'Correo electrónico',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Campo Contraseña
+              TextField(
+                controller: _passwordController,
+                focusNode: _passWordFocus,
+                obscureText: _obscure,
+                onChanged: (value) {
+                  _isChecking?.change(false);
+                  _isHandsUp?.change(true);
+                },
+                decoration: InputDecoration(
+                  labelText: 'Contraseña',
+                  prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
-                    //If ternario
-                    icon: Icon(
-                      _obscure ? Icons.visibility : Icons.visibility_off,
-                    ),
+                    icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
                     onPressed: () {
-                      //Refrescar el estado del widget
-                      setState(() {
-                        _obscure = !_obscure;
-                      });
+                      setState(() => _obscure = !_obscure);
                     },
                   ),
-                  border: OutlineInputBorder(
-                    //Redondeo de bordes
-                    borderRadius: BorderRadius.circular(12),
-                  )
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-            ]
+              const SizedBox(height: 8),
+
+              // Enlace Olvidé mi contraseña (Fase 4)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _showForgotPasswordDialog,
+                  child: const Text('¿Olvidaste tu contraseña?'),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Botón Iniciar Sesión (Fase 2)
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF673AB7),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _isLoading ? null : _signIn,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                        )
+                      : const Text(
+                          'Iniciar Sesión',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Enlace a Registro (Fase 3)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('¿No tienes una cuenta?'),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (context) => const SignUpScreen()),
+                      );
+                    },
+                    child: const Text(
+                      'Regístrate aquí',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -188,10 +389,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    //2.4 Liberar memoria al salir de la pantalla para liberar el foco
+    _emailController.dispose();
+    _passwordController.dispose();
     _emailFocus.dispose();
     _passWordFocus.dispose();
-    _typingdebounce?.cancel(); //eliminar el timmer
+    _typingdebounce?.cancel();
     super.dispose();
   }
 }
