@@ -84,12 +84,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _isHandsUp?.change(false);
     _isChecking?.change(false);
 
-    if (email.isEmpty || password.isEmpty) {
+    // Validación con expresión regular estricta según rúbrica:
+    // Email válido (formato institucional o general válido)
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    // Contraseña: Mínimo 8 caracteres, al menos 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial
+    final passwordRegex = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^._~+-])[A-Za-z\d@$!%*?&#^._~+-]{8,}$');
+
+    if (!emailRegex.hasMatch(email) || !passwordRegex.hasMatch(password)) {
       _trigFail?.fire();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor completa ambos campos'),
-          backgroundColor: Colors.orange,
+          content: Text('Formato de datos no válido según las reglas requeridas.'),
+          backgroundColor: Colors.red,
         ),
       );
       return;
@@ -114,35 +120,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       await Future.delayed(const Duration(milliseconds: 2200));
 
       // El AuthGate en main.dart detectará el cambio y pasará a HomeScreen automáticamente
-    } on FirebaseAuthException catch (e) {
-      // Error: Trigger de fallo del osito (sacudida de cabeza)
+    } on FirebaseAuthException catch (_) {
+      // Error genérico sin apuntar a campo específico según rúbrica
       _trigFail?.fire();
-
-      String errorMsg = 'Error al iniciar sesión';
-      if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
-        errorMsg = 'Correo o contraseña incorrectos.';
-      } else if (e.code == 'wrong-password') {
-        errorMsg = 'Contraseña incorrecta.';
-      } else if (e.code == 'invalid-email') {
-        errorMsg = 'Formato de correo inválido.';
-      } else if (e.message != null) {
-        errorMsg = e.message!;
-      }
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
+          const SnackBar(
+            content: Text('Credenciales no válidas.'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
+    } catch (_) {
       _trigFail?.fire();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error inesperado: $e'),
+          const SnackBar(
+            content: Text('Credenciales no válidas.'),
             backgroundColor: Colors.red,
           ),
         );
