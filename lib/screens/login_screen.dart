@@ -11,7 +11,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   // Controladores de texto
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -19,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // Control para mostrar u ocultar la contraseña
   bool _obscure = true;
   bool _isLoading = false;
+  bool _showCelebration = false;
 
   // Cerebro de la animación Rive
   StateMachineController? _controller;
@@ -27,6 +28,10 @@ class _LoginScreenState extends State<LoginScreen> {
   SMITrigger? _trigSuccess;
   SMITrigger? _trigFail;
   SMINumber? _numLook;
+
+  // Controladores de animación para resaltar la sonrisa del oso
+  late AnimationController _bearScaleController;
+  late Animation<double> _bearScaleAnimation;
 
   // Timer para mirada de Rive
   Timer? _typingdebounce;
@@ -38,6 +43,15 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+
+    _bearScaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _bearScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.15).chain(CurveTween(curve: Curves.easeOutBack)), weight: 50),
+      TweenSequenceItem(tween: Tween<double>(begin: 1.15, end: 1.08).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
+    ]).animate(_bearScaleController);
 
     _emailFocus.addListener(() {
       if (_emailFocus.hasFocus) {
@@ -89,11 +103,15 @@ class _LoginScreenState extends State<LoginScreen> {
         password: password,
       );
 
-      // Éxito: Trigger de éxito del osito
+      // Éxito: El osito sonríe y celebra (trigSuccess)
       _trigSuccess?.fire();
+      if (mounted) {
+        setState(() => _showCelebration = true);
+        _bearScaleController.forward();
+      }
 
-      // Dejamos un momento para apreciar la animación alegre del osito
-      await Future.delayed(const Duration(milliseconds: 900));
+      // Dejamos 2.2 segundos para ver completamente la sonrisa y efecto alegre del osito
+      await Future.delayed(const Duration(milliseconds: 2200));
 
       // El AuthGate en main.dart detectará el cambio y pasará a HomeScreen automáticamente
     } on FirebaseAuthException catch (e) {
@@ -254,24 +272,47 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 10),
 
-              // Animación de Rive del oso
-              SizedBox(
-                width: size.width,
-                height: 220,
-                child: RiveAnimation.asset(
-                  'assets/login-bear.riv',
-                  stateMachines: const ['Login Machine'],
-                  onInit: (artboard) {
-                    _controller = StateMachineController.fromArtboard(artboard, 'Login Machine');
-                    if (_controller == null) return;
-                    artboard.addController(_controller!);
+              // Animación de Rive del oso con zoom y resplandor al sonreír
+              AnimatedBuilder(
+                animation: _bearScaleAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _bearScaleAnimation.value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: _showCelebration
+                            ? [
+                                BoxShadow(
+                                  color: Colors.amber.withValues(alpha: 0.45),
+                                  blurRadius: 35,
+                                  spreadRadius: 8,
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
+                child: SizedBox(
+                  width: size.width,
+                  height: 220,
+                  child: RiveAnimation.asset(
+                    'assets/login-bear.riv',
+                    stateMachines: const ['Login Machine'],
+                    onInit: (artboard) {
+                      _controller = StateMachineController.fromArtboard(artboard, 'Login Machine');
+                      if (_controller == null) return;
+                      artboard.addController(_controller!);
 
-                    _isChecking = _controller?.findSMI('isChecking');
-                    _isHandsUp = _controller?.findSMI('isHandsUp');
-                    _trigSuccess = _controller?.findSMI('trigSuccess');
-                    _trigFail = _controller?.findSMI('trigFail');
-                    _numLook = _controller?.findSMI('numLook');
-                  },
+                      _isChecking = _controller?.findSMI('isChecking');
+                      _isHandsUp = _controller?.findSMI('isHandsUp');
+                      _trigSuccess = _controller?.findSMI('trigSuccess');
+                      _trigFail = _controller?.findSMI('trigFail');
+                      _numLook = _controller?.findSMI('numLook');
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -389,6 +430,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _bearScaleController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _emailFocus.dispose();
